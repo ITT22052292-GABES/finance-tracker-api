@@ -4,6 +4,7 @@ const TransactionSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User" },
   type: { type: String, enum: ["income", "expense"], required: true },
   amount: Number,
+  
   category: String,
   tags: [String],
   date: { type: Date, default: Date.now },

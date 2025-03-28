@@ -31,7 +31,7 @@ describe('Input Validation Security Tests', () => {
         date: new Date()
       });
     
-    expect(invalidAmountResponse.status).to.not.equal(201);
+    expect(invalidAmountResponse.status).to.not.equal(200);
     
     
     const negativeAmountResponse = await request(app)

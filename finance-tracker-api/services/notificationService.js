@@ -3,11 +3,12 @@ import cron from "node-cron";
 import dotenv from "dotenv";
 import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
+import connectDB from "../config/database.js";
 
 dotenv.config();
 
 
-cron.schedule("0 0 * * *", async () => {
+cron.schedule("* * * * *", async () => {
   console.log("🔄 Running cron job for upcoming transactions...");
 
   try {
@@ -40,40 +41,42 @@ cron.schedule("0 0 * * *", async () => {
 
 async function sendEmailNotification(userId, transaction) {
   try {
-   
+    //connectDB();
+    //console.log("🔄 Connecting to database...");
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      console.error(`❌ User with ID ${userId} not found`);
+      return;
+    }
 
-    console.log(`📤 Sending email to ...`);
+    console.log(`📤 Sending email to ${user.email}...`);
 
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
+      service: 'gmail', 
       auth: {
-            type: "OAUTH2",
-            user: process.env.GMAIL_USERNAME,
-            clientId: process.env.OAUTH_CLIENT_ID,
-            clientSecret: process.env.OAUTH_CLIENT_SECRET,
-            refreshToken: process.env.OAUTH_REFRESH_TOKEN,
-            accessToken: process.env.OAUTH_ACCESS_TOKEN,
-            expires: 10000
-      }
+        user: process.env.GMAIL_USERNAME, 
+        pass: process.env.GMAIL_PASSWORD,  
+      },
     });
 
     const mailOptions = {
-      from: "kavindugav@gmail.com",
-      to: "gavesha70@gmail.com", // Send to actual user email
-      subject: `Upcoming Transaction Reminder: `,
-      text: `Hello ,\n\nYour  transaction of amount $ is due soon.\n\nThank you!`,
+      from: process.env.GMAIL_USERNAME ,
+      to: user.email || "gavesha70@gmail.com", // Use user's email or fallback to test email
+      subject: `Upcoming Transaction Reminder: ${transaction.category}`,
+      text: `Hello ${user.name || 'there'},\n\nYour ${transaction.category} transaction of amount $${transaction.amount} is due soon.\n\nThank you!`,
     };
 
-    const info = transporter.sendMail(mailOptions);
+    const info = await transporter.sendMail(mailOptions);
     console.log("✅ Email sent:", info.response);
+    return info;
   } catch (error) {
     console.error("❌ Error sending email:", error);
+    throw error;
   }
 }
 
-// Manually trigger cron for testing
+
 (async () => {
   console.log("🚀 Running manual email test...");
   await sendEmailNotification("67ced706b805db866c34397e", { category: "Rent", amount: 500 });
