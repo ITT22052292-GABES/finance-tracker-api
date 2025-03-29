@@ -57,59 +57,62 @@ async function checkBudgetLimits(userId, category, amount, date) {
 export async function createTransaction(req, res) {
   try {
     const { 
-      recurring, 
-      recurrencePattern, 
-      recurrenceEndDate, 
+      amount, 
+      category, 
+      description, 
+      date, 
+      type, 
+      tags,
+      recurring,
+      recurrencePattern,
       nextTransactionDate,
-      category,
-      amount,
-      date
+      recurrenceEndDate 
     } = req.body;
     
-    
-    if (recurring) {
-      // If it's a recurring transaction, validate recurrencePattern and other necessary data
-      if (!recurrencePattern || !nextTransactionDate) {
-        return res.status(400).json({ 
-          error: "Recurring transactions require a recurrence pattern and next transaction date" 
-        });
-      }
-    }
-    
-    
-    const budgetCheck = await checkBudgetLimits(
-      req.user.id,
+    // Create a new transaction
+    const transaction = new Transaction({
+      userId: req.user.id,
+      amount,
       category,
-      parseFloat(amount),
-      new Date(date)
-    );
-    
-    
-    const transaction = new Transaction({ 
-      ...req.body, 
-      userId: req.user.id 
+      description,
+      date: date || new Date(),
+      type,
+      tags,
+      recurring,
+      recurrencePattern,
+      nextTransactionDate,
+      recurrenceEndDate
     });
     
+    // Let Mongoose validation handle errors
     await transaction.save();
     
-    
-    if (recurring) {
-      
-      await handleRecurringTransactions(transaction);
+    res.status(201).json(transaction);
+  } catch (error) {
+    // Handle Mongoose validation errors
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ errors: validationErrors });
     }
     
-    
-    res.status(201).json({
-      transaction: transaction,
-      budgetInfo: budgetCheck.hasBudget ? {
-        budgetLimit: budgetCheck.budgetLimit,
-        totalSpent: budgetCheck.newTotal,
-        percentUsed: budgetCheck.percentUsed,
-        warningMessage: budgetCheck.warningMessage
-      } : null
+    res.status(500).json({ error: error.message });
+  }
+}
+
+export async function getTransactionById(req, res) {
+  try {
+    const transaction = await Transaction.findOne({
+      _id: req.params.id,
+      userId: req.user.id
     });
+    
+    if (!transaction) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+    
+    res.status(200).json(transaction);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 }
 
@@ -124,80 +127,57 @@ export async function getTransactions(req, res) {
 }
 
 
-export async function getTransactionById(req, res) {
-  try {
-    const transaction = await Transaction.findOne({
-      _id: req.params.id,
-      userId: req.user.id
-    });
-    
-    if (!transaction) {
-      return res.status(404).json({ error: "Transaction not found" });
-    }
-    
-    res.json(transaction);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-}
+
 
 
 export async function updateTransaction(req, res) {
   try {
-    const {
-      category,
-      amount,
-      date,
+    const { 
+      amount, 
+      category, 
+      description, 
+      date, 
+      type, 
+      tags,
       recurring,
       recurrencePattern,
-      nextTransactionDate
+      nextTransactionDate,
+      recurrenceEndDate 
     } = req.body;
     
-    
-    const transaction = await Transaction.findOne({
+    const transaction = await Transaction.findOne({ 
       _id: req.params.id,
-      userId: req.user.id
+      userId: req.user.id 
     });
     
     if (!transaction) {
-      return res.status(404).json({ error: "Transaction not found" });
+      return res.status(404).json({ error: 'Transaction not found' });
     }
     
+    // Update fields
+    if (amount) transaction.amount = amount;
+    if (category) transaction.category = category;
+    if (description !== undefined) transaction.description = description;
+    if (date) transaction.date = date;
+    if (type) transaction.type = type;
+    if (tags) transaction.tags = tags;
+    if (recurring !== undefined) transaction.recurring = recurring;
+    if (recurrencePattern) transaction.recurrencePattern = recurrencePattern;
+    if (nextTransactionDate) transaction.nextTransactionDate = nextTransactionDate;
+    if (recurrenceEndDate) transaction.recurrenceEndDate = recurrenceEndDate;
     
-    let budgetCheck = null;
-    if (category || amount) {
-      budgetCheck = await checkBudgetLimits(
-        req.user.id,
-        category || transaction.category,
-        parseFloat(amount) || transaction.amount,
-        new Date(date || transaction.date)
-      );
-    }
-    
-    
-    Object.keys(req.body).forEach(key => {
-      transaction[key] = req.body[key];
-    });
-    
-    
-    if (recurring && (recurrencePattern !== transaction.recurrencePattern || nextTransactionDate)) {
-      await handleRecurringTransactions(transaction);
-    }
-    
+    // Let Mongoose validation handle errors
     await transaction.save();
     
-    
-    res.json({
-      transaction: transaction,
-      budgetInfo: budgetCheck && budgetCheck.hasBudget ? {
-        budgetLimit: budgetCheck.budgetLimit,
-        totalSpent: budgetCheck.newTotal,
-        percentUsed: budgetCheck.percentUsed,
-        warningMessage: budgetCheck.warningMessage
-      } : null
-    });
+    res.json(transaction);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    // Handle Mongoose validation errors
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ errors: validationErrors });
+    }
+    
+    res.status(500).json({ error: error.message });
   }
 }
 
@@ -224,14 +204,20 @@ export async function getTransactionsByCategory(req, res) {
   try {
     const { category } = req.params;
     
-    const transactions = await Transaction.find({
+    // Validate category parameter
+    if (typeof category !== 'string' || category.includes('$') || category.startsWith('/')) {
+      return res.status(400).json({ error: "Invalid category format" });
+    }
+    
+    // Now safe to use in query
+    const transactions = await Transaction.find({ 
       userId: req.user.id,
-      category
+      category: category
     });
     
     res.json(transactions);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 }
 

@@ -11,7 +11,7 @@ router.use(authMiddleware);
 router.use(adminAuth); 
 
 
-router.get('/users', getAllUsers);
+router.get('/users', adminAuth, getAllUsers);
 router.get('/users/:userId', getUserDetails);
 
 

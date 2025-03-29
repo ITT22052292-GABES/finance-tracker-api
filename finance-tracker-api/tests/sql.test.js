@@ -45,7 +45,8 @@ describe('NoSQL Injection Security Tests', () => {
       .post('/api/auth/login')
       .send(maliciousPayload);
     
-    expect(response.status).to.not.equal(200);
+    // Should receive 400 Bad Request, not 200 OK
+    expect(response.status).to.equal(400);
     expect(response.body).to.not.have.property('token');
   });
   
